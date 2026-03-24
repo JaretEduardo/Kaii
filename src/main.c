@@ -71,7 +71,6 @@ int main(int argc, char *argv[]) {
                     printf("%.*s: %.*s",
                            (int)param->var_decl.name.length, param->var_decl.name.start,
                            (int)param->var_decl.declared_type.length, param->var_decl.declared_type.start);
-                    
                     if (p < decl->func_decl.parameter_count - 1) printf(", ");
                 }
 
@@ -83,7 +82,24 @@ int main(int argc, char *argv[]) {
                     printf(") {\n");
                 }
 
-                printf("      [Body logic recognized]\n");
+                for (size_t s = 0; s < decl->func_decl.body_statement_count; s++) {
+                    AstNode *stmt = decl->func_decl.body_statements[s];
+                    
+                    if (stmt->type == AST_ASSIGNMENT) {
+                        AstNode *target = stmt->assignment.target;
+                        AstNode *value = stmt->assignment.value;
+                        
+                        printf("      instruccion: %.*s := ", 
+                               (int)target->var_decl.name.length, 
+                               target->var_decl.name.start);
+                        
+                        if (value->type == AST_ALLOC_EXPR) {
+                            printf("alloc %.*s\n", 
+                                   (int)value->alloc_expr.type_name.length, 
+                                   value->alloc_expr.type_name.start);
+                        }
+                    }
+                }
                 printf("    }\n");
             }
         }

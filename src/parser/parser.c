@@ -93,12 +93,7 @@ static AstNode *parse_var_decl(Parser *parser) {
     }
 
     parser_advance(parser);
-    if (parser->current_token.type != TOKEN_I32 &&
-        parser->current_token.type != TOKEN_F32 &&
-        parser->current_token.type != TOKEN_BOOL &&
-        parser->current_token.type != TOKEN_I8 &&
-        parser->current_token.type != TOKEN_F64 &&
-        parser->current_token.type != TOKEN_IDENTIFIER) {
+    if (!parser_is_valid_type_token(parser->current_token.type)) {
         fprintf(stderr, "parse_var_decl: expected a valid property type\n");
         return NULL;
     }
@@ -120,6 +115,111 @@ static AstNode *parse_var_decl(Parser *parser) {
     var_node->var_decl.declared_type = declared_type;
     var_node->var_decl.initializer = NULL;
     return var_node;
+}
+
+static AstNode *parse_alloc_expr(Parser *parser) {
+    AstNode *alloc_node = NULL;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_alloc_expr: parser is NULL\n");
+        return NULL;
+    }
+
+    if (parser->current_token.type != TOKEN_ALLOC) {
+        fprintf(stderr, "parse_alloc_expr: expected TOKEN_ALLOC\n");
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "parse_alloc_expr: expected allocated type name after 'alloc'\n");
+        return NULL;
+    }
+
+    alloc_node = ast_create_node(AST_ALLOC_EXPR);
+    if (alloc_node == NULL) {
+        return NULL;
+    }
+
+    alloc_node->alloc_expr.type_name = parser->current_token;
+    alloc_node->alloc_expr.size_expr = NULL;
+    return alloc_node;
+}
+
+static AstNode *parse_statement(Parser *parser) {
+    AstNode *assignment = NULL;
+    AstNode *target = NULL;
+    AstNode *value = NULL;
+    Token target_name;
+    Token empty_type;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_statement: parser is NULL\n");
+        return NULL;
+    }
+
+    /* Statement grammar for this phase: IDENTIFIER (':')? '=' alloc IDENTIFIER ';' */
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "parse_statement: expected statement starting with IDENTIFIER\n");
+        return NULL;
+    }
+
+    target_name = parser->current_token;
+
+    parser_advance(parser);
+    if (parser->current_token.type == TOKEN_COLON) {
+        parser_advance(parser);
+        if (parser->current_token.type != TOKEN_ASSIGN) {
+            fprintf(stderr, "parse_statement: expected '=' after ':' in assignment\n");
+            return NULL;
+        }
+    } else if (parser->current_token.type != TOKEN_ASSIGN) {
+        fprintf(stderr, "parse_statement: expected assignment operator ':=' or '='\n");
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type == TOKEN_ALLOC) {
+        value = parse_alloc_expr(parser);
+        if (value == NULL) {
+            return NULL;
+        }
+    } else {
+        fprintf(stderr, "parse_statement: expected alloc expression on assignment RHS\n");
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "parse_statement: expected ';' at end of statement\n");
+        free(value);
+        return NULL;
+    }
+
+    target = ast_create_node(AST_VAR_DECL);
+    if (target == NULL) {
+        free(value);
+        return NULL;
+    }
+
+    empty_type.start = NULL;
+    empty_type.length = 0u;
+    empty_type.type = TOKEN_EOF;
+
+    target->var_decl.name = target_name;
+    target->var_decl.declared_type = empty_type;
+    target->var_decl.initializer = NULL;
+
+    assignment = ast_create_node(AST_ASSIGNMENT);
+    if (assignment == NULL) {
+        free(target);
+        free(value);
+        return NULL;
+    }
+
+    assignment->assignment.target = target;
+    assignment->assignment.value = value;
+    return assignment;
 }
 
 static AstNode *parse_class_decl(Parser *parser) {
@@ -196,9 +296,8 @@ static AstNode *parse_class_decl(Parser *parser) {
 static AstNode *parse_func_decl(Parser *parser) {
     AstNode *func_node = NULL;
     Token default_return_type;
-    size_t brace_depth = 0u;
 
-    /* Recursive descent entry: func_decl := 'fn' IDENTIFIER '(' ')' '{' ... '}' */
+    /* Recursive descent entry: func_decl := 'fn' IDENTIFIER '(' params? ')' (':' type)? '{' statements* '}' */
     if (parser->current_token.type != TOKEN_FN) {
         fprintf(stderr, "parse_func_decl: expected TOKEN_FN\n");
         return NULL;
@@ -319,26 +418,42 @@ static AstNode *parse_func_decl(Parser *parser) {
         return NULL;
     }
 
-    /*
-     * Safe body skip with brace tracking:
-     * handles nested blocks while keeping the parser single-pass.
-     */
-    brace_depth = 1u;
-    while (brace_depth > 0u) {
-        parser_advance(parser);
-
-        if (parser->current_token.type == TOKEN_EOF) {
-            fprintf(stderr, "parse_func_decl: unexpected EOF while scanning function body\n");
+    parser_advance(parser);
+    while (parser->current_token.type != TOKEN_RBRACE &&
+           parser->current_token.type != TOKEN_EOF) {
+        AstNode *statement = parse_statement(parser);
+        if (statement == NULL) {
+            fprintf(stderr, "parse_func_decl: failed to parse statement near '%.*s'\n",
+                    (int)parser->current_token.length,
+                    parser->current_token.start);
             free(func_node->func_decl.parameters);
+            free(func_node->func_decl.body_statements);
             free(func_node);
             return NULL;
         }
 
-        if (parser->current_token.type == TOKEN_LBRACE) {
-            ++brace_depth;
-        } else if (parser->current_token.type == TOKEN_RBRACE) {
-            --brace_depth;
+        if (!parser_append_node_ptr(
+                &func_node->func_decl.body_statements,
+                &func_node->func_decl.body_statement_count,
+                statement,
+                "parse_func_decl")) {
+            free(statement);
+            free(func_node->func_decl.parameters);
+            free(func_node->func_decl.body_statements);
+            free(func_node);
+            return NULL;
         }
+
+        /* parse_statement exits on ';', so advance to the next statement token. */
+        parser_advance(parser);
+    }
+
+    if (parser->current_token.type == TOKEN_EOF) {
+        fprintf(stderr, "parse_func_decl: unexpected EOF while scanning function body\n");
+        free(func_node->func_decl.parameters);
+        free(func_node->func_decl.body_statements);
+        free(func_node);
+        return NULL;
     }
 
     return func_node;
