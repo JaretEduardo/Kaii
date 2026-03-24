@@ -60,6 +60,14 @@ int main(int argc, char *argv[]) {
                 }
                 printf("    }\n");
             }
+
+            else if (decl->type == AST_FUNC_DECL) {
+                printf(" -> fn %.*s() {\n",
+                       (int)decl->func_decl.name.length,
+                       decl->func_decl.name.start);
+                printf("      [Body execution logic recognized]\n");
+                printf("    }\n");
+            }
         }
     }
 

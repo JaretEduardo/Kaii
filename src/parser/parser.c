@@ -174,6 +174,74 @@ static AstNode *parse_class_decl(Parser *parser) {
     return class_node;
 }
 
+static AstNode *parse_func_decl(Parser *parser) {
+    AstNode *func_node = NULL;
+    size_t brace_depth = 0u;
+
+    /* Recursive descent entry: func_decl := 'fn' IDENTIFIER '(' ')' '{' ... '}' */
+    if (parser->current_token.type != TOKEN_FN) {
+        fprintf(stderr, "parse_func_decl: expected TOKEN_FN\n");
+        return NULL;
+    }
+
+    func_node = ast_create_node(AST_FUNC_DECL);
+    if (func_node == NULL) {
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "parse_func_decl: expected function name after 'fn'\n");
+        free(func_node);
+        return NULL;
+    }
+    func_node->func_decl.name = parser->current_token;
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_LPAREN) {
+        fprintf(stderr, "parse_func_decl: expected '(' after function name\n");
+        free(func_node);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_RPAREN) {
+        fprintf(stderr, "parse_func_decl: expected ')' for zero-parameter function\n");
+        free(func_node);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_LBRACE) {
+        fprintf(stderr, "parse_func_decl: expected '{' after function signature\n");
+        free(func_node);
+        return NULL;
+    }
+
+    /*
+     * Safe body skip with brace tracking:
+     * handles nested blocks while keeping the parser single-pass.
+     */
+    brace_depth = 1u;
+    while (brace_depth > 0u) {
+        parser_advance(parser);
+
+        if (parser->current_token.type == TOKEN_EOF) {
+            fprintf(stderr, "parse_func_decl: unexpected EOF while scanning function body\n");
+            free(func_node);
+            return NULL;
+        }
+
+        if (parser->current_token.type == TOKEN_LBRACE) {
+            ++brace_depth;
+        } else if (parser->current_token.type == TOKEN_RBRACE) {
+            --brace_depth;
+        }
+    }
+
+    return func_node;
+}
+
 void parser_init(Parser *parser, const char *source) {
     if (parser == NULL) {
         return;
@@ -227,6 +295,26 @@ AstNode *parse_program(Parser *parser) {
             }
 
             /* parse_class_decl exits with current token on the closing '}'. */
+            parser_advance(parser);
+            continue;
+        }
+
+        if (parser->current_token.type == TOKEN_FN) {
+            AstNode *func_decl = parse_func_decl(parser);
+            if (func_decl == NULL) {
+                free(program_node->program.declarations);
+                free(program_node);
+                return NULL;
+            }
+
+            if (!parser_append_declaration(&program_node->program, func_decl)) {
+                free(func_decl);
+                free(program_node->program.declarations);
+                free(program_node);
+                return NULL;
+            }
+
+            /* parse_func_decl exits with current token on the closing '}'. */
             parser_advance(parser);
             continue;
         }

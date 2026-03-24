@@ -2,6 +2,6 @@ class Player {
     health: i32;
 }
 
-class Enemy {
-    damage: f32;
+fn main() {
+    p := alloc Player;
 }
