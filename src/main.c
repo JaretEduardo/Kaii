@@ -5,6 +5,7 @@
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 #include "utils/file_io.h"
+#include "codegen/codegen.h"
 
 int main(int argc, char *argv[]) {
     const char *source_path = NULL;
@@ -105,6 +106,13 @@ int main(int argc, char *argv[]) {
                 }
                 printf("    }\n");
             }
+        }
+
+        printf("\n[*] Transpilando a C...\n");
+        if (generate_code(ast, "out.c") == 0) {
+            printf("[+] Archivo 'out.c' generado con exito.\n");
+        } else {
+            printf("[!] Error fatal durante la generacion de codigo.\n");
         }
     }
 
