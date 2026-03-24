@@ -78,6 +78,46 @@ static int emit_alloc_expr(FILE *out, AstNode *node) {
     return 1;
 }
 
+static int emit_escaped_c_string(FILE *out, Token token) {
+    size_t i;
+
+    if (token.start == NULL) {
+        return 0;
+    }
+
+    for (i = 0u; i < token.length; ++i) {
+        const unsigned char c = (unsigned char)token.start[i];
+
+        if (c == '\\') {
+            if (!write_literal(out, "\\\\")) {
+                return 0;
+            }
+        } else if (c == '"') {
+            if (!write_literal(out, "\\\"")) {
+                return 0;
+            }
+        } else if (c == '\n') {
+            if (!write_literal(out, "\\n")) {
+                return 0;
+            }
+        } else if (c == '\r') {
+            if (!write_literal(out, "\\r")) {
+                return 0;
+            }
+        } else if (c == '\t') {
+            if (!write_literal(out, "\\t")) {
+                return 0;
+            }
+        } else {
+            if (fputc((int)c, out) == EOF) {
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
 static int emit_statement(FILE *out, AstNode *stmt, int indent_depth) {
     if (stmt == NULL) {
         return 0;
@@ -120,6 +160,31 @@ static int emit_statement(FILE *out, AstNode *stmt, int indent_depth) {
         return write_literal(out, "free(") &&
                write_token(out, stmt->free_stmt.target_name) &&
                write_literal(out, ");\n");
+    }
+
+    if (stmt->type == AST_PRINT_STMT) {
+        AstNode *expr = stmt->print_stmt.expression;
+        Token expr_token;
+
+        if (expr == NULL || expr->type != AST_VAR_DECL) {
+            return 0;
+        }
+
+        expr_token = expr->var_decl.name;
+
+        if (expr_token.type == TOKEN_STRING) {
+            return write_literal(out, "printf(\"") &&
+                   emit_escaped_c_string(out, expr_token) &&
+                   write_literal(out, "\\n\");\n");
+        }
+
+        if (expr_token.type == TOKEN_IDENTIFIER) {
+            return write_literal(out, "printf(\"%d\\n\", ") &&
+                   write_token(out, expr_token) &&
+                   write_literal(out, ");\n");
+        }
+
+        return 0;
     }
 
     return 0;
@@ -247,7 +312,8 @@ int generate_code(AstNode *ast, const char *output_filename) {
     }
 
     if (!write_literal(out, "#include <stdint.h>\n") ||
-        !write_literal(out, "#include <stdlib.h>\n\n")) {
+        !write_literal(out, "#include <stdlib.h>\n") ||
+        !write_literal(out, "#include <stdio.h>\n\n")) {
         fprintf(stderr, "generate_code: failed writing file header\n");
         fclose(out);
         return 1;

@@ -165,6 +165,77 @@ static void parser_recover_statement(Parser *parser, Token start_token) {
     }
 }
 
+static AstNode *parse_print_stmt(Parser *parser) {
+    AstNode *print_node = NULL;
+    AstNode *expression = NULL;
+    Token statement_start;
+    Token expression_token;
+    Token empty_type;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_print_stmt: parser is NULL\n");
+        return NULL;
+    }
+
+    statement_start = parser->current_token;
+
+    if (parser->current_token.type != TOKEN_PRINT) {
+        fprintf(stderr, "parse_print_stmt: expected TOKEN_PRINT\n");
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_LPAREN) {
+        fprintf(stderr, "parse_print_stmt: expected '(' after 'print'\n");
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_IDENTIFIER &&
+        parser->current_token.type != TOKEN_STRING) {
+        fprintf(stderr, "parse_print_stmt: expected identifier or string inside print(...)\n");
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+    expression_token = parser->current_token;
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_RPAREN) {
+        fprintf(stderr, "parse_print_stmt: expected ')' after print argument\n");
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "parse_print_stmt: expected ';' after print(...)\n");
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    expression = ast_create_node(AST_VAR_DECL);
+    if (expression == NULL) {
+        return NULL;
+    }
+
+    empty_type.start = NULL;
+    empty_type.length = 0u;
+    empty_type.type = TOKEN_EOF;
+    expression->var_decl.name = expression_token;
+    expression->var_decl.declared_type = empty_type;
+    expression->var_decl.initializer = NULL;
+
+    print_node = ast_create_node(AST_PRINT_STMT);
+    if (print_node == NULL) {
+        free(expression);
+        return NULL;
+    }
+
+    print_node->print_stmt.expression = expression;
+    return print_node;
+}
+
 static AstNode *parse_statement(Parser *parser) {
     Token statement_start;
     AstNode *assignment = NULL;
@@ -180,6 +251,15 @@ static AstNode *parse_statement(Parser *parser) {
     }
 
     statement_start = parser->current_token;
+
+    if (parser->current_token.type == TOKEN_PRINT) {
+        AstNode *print_stmt = parse_print_stmt(parser);
+        if (print_stmt == NULL) {
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+        return print_stmt;
+    }
 
     if (parser->current_token.type == TOKEN_FREE) {
         Token free_target;
