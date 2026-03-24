@@ -1,5 +1,10 @@
 class Player {
     health: i32;
+    mana: i32;
+}
+
+fn calculate_damage(base: i32, multiplier: f32) : f32 {
+    // Aquí irá la lógica después
 }
 
 fn main() {

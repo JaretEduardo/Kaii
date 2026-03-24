@@ -8,46 +8,65 @@ static void parser_advance(Parser *parser) {
     parser->peek_token = lexer_next_token(&parser->current_source_pointer);
 }
 
-static int parser_append_declaration(AstProgram *program, AstNode *declaration) {
+static int parser_is_comma_token(const Token *token) {
+    if (token == NULL || token->start == NULL || token->length != 1u) {
+        return 0;
+    }
+    return token->start[0] == ',';
+}
+
+static int parser_is_valid_type_token(TokenType type) {
+    return type == TOKEN_I32 ||
+           type == TOKEN_F32 ||
+           type == TOKEN_BOOL ||
+           type == TOKEN_I8 ||
+           type == TOKEN_F64 ||
+           type == TOKEN_IDENTIFIER;
+}
+
+static int parser_append_node_ptr(AstNode ***items, size_t *count, AstNode *node, const char *context) {
     AstNode **new_items = NULL;
-    const size_t new_count = program->declaration_count + 1u;
+    const size_t new_count = *count + 1u;
 
-    if (new_count < program->declaration_count) {
-        fprintf(stderr, "parser_append_declaration: declaration count overflow\n");
+    if (new_count < *count) {
+        fprintf(stderr, "%s: item count overflow\n", context);
         return 0;
     }
 
-    new_items = (AstNode **)realloc(program->declarations, new_count * sizeof(AstNode *));
+    new_items = (AstNode **)realloc(*items, new_count * sizeof(AstNode *));
     if (new_items == NULL) {
-        fprintf(stderr, "parser_append_declaration: out of memory growing declaration list\n");
+        fprintf(stderr, "%s: out of memory while growing node array\n", context);
         return 0;
     }
 
-    program->declarations = new_items;
-    program->declarations[program->declaration_count] = declaration;
-    program->declaration_count = new_count;
+    *items = new_items;
+    (*items)[*count] = node;
+    *count = new_count;
     return 1;
 }
 
+static int parser_append_declaration(AstProgram *program, AstNode *declaration) {
+    return parser_append_node_ptr(
+        &program->declarations,
+        &program->declaration_count,
+        declaration,
+        "parser_append_declaration");
+}
+
 static int parser_append_class_member(AstClassDecl *class_decl, AstNode *member) {
-    AstNode **new_items = NULL;
-    const size_t new_count = class_decl->member_count + 1u;
+    return parser_append_node_ptr(
+        &class_decl->members,
+        &class_decl->member_count,
+        member,
+        "parser_append_class_member");
+}
 
-    if (new_count < class_decl->member_count) {
-        fprintf(stderr, "parser_append_class_member: member count overflow\n");
-        return 0;
-    }
-
-    new_items = (AstNode **)realloc(class_decl->members, new_count * sizeof(AstNode *));
-    if (new_items == NULL) {
-        fprintf(stderr, "parser_append_class_member: out of memory growing class member list\n");
-        return 0;
-    }
-
-    class_decl->members = new_items;
-    class_decl->members[class_decl->member_count] = member;
-    class_decl->member_count = new_count;
-    return 1;
+static int parser_append_func_parameter(AstFuncDecl *func_decl, AstNode *parameter) {
+    return parser_append_node_ptr(
+        &func_decl->parameters,
+        &func_decl->parameter_count,
+        parameter,
+        "parser_append_func_parameter");
 }
 
 static AstNode *parse_var_decl(Parser *parser) {
@@ -176,6 +195,7 @@ static AstNode *parse_class_decl(Parser *parser) {
 
 static AstNode *parse_func_decl(Parser *parser) {
     AstNode *func_node = NULL;
+    Token default_return_type;
     size_t brace_depth = 0u;
 
     /* Recursive descent entry: func_decl := 'fn' IDENTIFIER '(' ')' '{' ... '}' */
@@ -205,15 +225,96 @@ static AstNode *parse_func_decl(Parser *parser) {
     }
 
     parser_advance(parser);
-    if (parser->current_token.type != TOKEN_RPAREN) {
-        fprintf(stderr, "parse_func_decl: expected ')' for zero-parameter function\n");
-        free(func_node);
-        return NULL;
+    while (parser->current_token.type != TOKEN_RPAREN) {
+        AstNode *parameter = NULL;
+        Token param_name;
+        Token param_type;
+
+        if (parser->current_token.type == TOKEN_EOF) {
+            fprintf(stderr, "parse_func_decl: unexpected EOF in parameter list\n");
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+
+        if (parser->current_token.type != TOKEN_IDENTIFIER) {
+            fprintf(stderr, "parse_func_decl: expected parameter name (IDENTIFIER)\n");
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+        param_name = parser->current_token;
+
+        parser_advance(parser);
+        if (parser->current_token.type != TOKEN_COLON) {
+            fprintf(stderr, "parse_func_decl: expected ':' after parameter name\n");
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+
+        parser_advance(parser);
+        if (!parser_is_valid_type_token(parser->current_token.type)) {
+            fprintf(stderr, "parse_func_decl: expected valid parameter type\n");
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+        param_type = parser->current_token;
+
+        parameter = ast_create_node(AST_VAR_DECL);
+        if (parameter == NULL) {
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+        parameter->var_decl.name = param_name;
+        parameter->var_decl.declared_type = param_type;
+        parameter->var_decl.initializer = NULL;
+
+        if (!parser_append_func_parameter(&func_node->func_decl, parameter)) {
+            free(parameter);
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+
+        parser_advance(parser);
+        if (parser->current_token.type == TOKEN_RPAREN) {
+            break;
+        }
+
+        if (!parser_is_comma_token(&parser->current_token)) {
+            fprintf(stderr, "parse_func_decl: expected ',' or ')' after parameter\n");
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+
+        parser_advance(parser);
     }
 
+    default_return_type.start = NULL;
+    default_return_type.length = 0u;
+    default_return_type.type = TOKEN_EOF;
+    func_node->func_decl.return_type = default_return_type;
+
     parser_advance(parser);
+    if (parser->current_token.type == TOKEN_COLON) {
+        parser_advance(parser);
+        if (!parser_is_valid_type_token(parser->current_token.type)) {
+            fprintf(stderr, "parse_func_decl: expected valid return type after ':'\n");
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
+        func_node->func_decl.return_type = parser->current_token;
+        parser_advance(parser);
+    }
+
     if (parser->current_token.type != TOKEN_LBRACE) {
         fprintf(stderr, "parse_func_decl: expected '{' after function signature\n");
+        free(func_node->func_decl.parameters);
         free(func_node);
         return NULL;
     }
@@ -228,6 +329,7 @@ static AstNode *parse_func_decl(Parser *parser) {
 
         if (parser->current_token.type == TOKEN_EOF) {
             fprintf(stderr, "parse_func_decl: unexpected EOF while scanning function body\n");
+            free(func_node->func_decl.parameters);
             free(func_node);
             return NULL;
         }

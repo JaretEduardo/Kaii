@@ -62,10 +62,28 @@ int main(int argc, char *argv[]) {
             }
 
             else if (decl->type == AST_FUNC_DECL) {
-                printf(" -> fn %.*s() {\n",
+                printf(" -> fn %.*s(",
                        (int)decl->func_decl.name.length,
                        decl->func_decl.name.start);
-                printf("      [Body execution logic recognized]\n");
+                
+                for (size_t p = 0; p < decl->func_decl.parameter_count; p++) {
+                    AstNode *param = decl->func_decl.parameters[p];
+                    printf("%.*s: %.*s",
+                           (int)param->var_decl.name.length, param->var_decl.name.start,
+                           (int)param->var_decl.declared_type.length, param->var_decl.declared_type.start);
+                    
+                    if (p < decl->func_decl.parameter_count - 1) printf(", ");
+                }
+
+                if (decl->func_decl.return_type.start != NULL) {
+                    printf(") : %.*s {\n",
+                           (int)decl->func_decl.return_type.length,
+                           decl->func_decl.return_type.start);
+                } else {
+                    printf(") {\n");
+                }
+
+                printf("      [Body logic recognized]\n");
                 printf("    }\n");
             }
         }
