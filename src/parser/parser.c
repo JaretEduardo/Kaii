@@ -29,9 +29,82 @@ static int parser_append_declaration(AstProgram *program, AstNode *declaration) 
     return 1;
 }
 
+static int parser_append_class_member(AstClassDecl *class_decl, AstNode *member) {
+    AstNode **new_items = NULL;
+    const size_t new_count = class_decl->member_count + 1u;
+
+    if (new_count < class_decl->member_count) {
+        fprintf(stderr, "parser_append_class_member: member count overflow\n");
+        return 0;
+    }
+
+    new_items = (AstNode **)realloc(class_decl->members, new_count * sizeof(AstNode *));
+    if (new_items == NULL) {
+        fprintf(stderr, "parser_append_class_member: out of memory growing class member list\n");
+        return 0;
+    }
+
+    class_decl->members = new_items;
+    class_decl->members[class_decl->member_count] = member;
+    class_decl->member_count = new_count;
+    return 1;
+}
+
+static AstNode *parse_var_decl(Parser *parser) {
+    AstNode *var_node = NULL;
+    Token name;
+    Token declared_type;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_var_decl: parser is NULL\n");
+        return NULL;
+    }
+
+    if (parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "parse_var_decl: expected property name (IDENTIFIER)\n");
+        return NULL;
+    }
+
+    name = parser->current_token;
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_COLON) {
+        fprintf(stderr, "parse_var_decl: expected ':' after property name\n");
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_I32 &&
+        parser->current_token.type != TOKEN_F32 &&
+        parser->current_token.type != TOKEN_BOOL &&
+        parser->current_token.type != TOKEN_I8 &&
+        parser->current_token.type != TOKEN_F64 &&
+        parser->current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "parse_var_decl: expected a valid property type\n");
+        return NULL;
+    }
+
+    declared_type = parser->current_token;
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_SEMICOLON) {
+        fprintf(stderr, "parse_var_decl: expected ';' after property type\n");
+        return NULL;
+    }
+
+    var_node = ast_create_node(AST_VAR_DECL);
+    if (var_node == NULL) {
+        return NULL;
+    }
+
+    var_node->var_decl.name = name;
+    var_node->var_decl.declared_type = declared_type;
+    var_node->var_decl.initializer = NULL;
+    return var_node;
+}
+
 static AstNode *parse_class_decl(Parser *parser) {
     AstNode *class_node = NULL;
-    size_t brace_depth = 0u;
 
     /* Recursive descent entry: class_decl := 'class' IDENTIFIER '{' ... '}' */
     if (parser->current_token.type != TOKEN_CLASS) {
@@ -60,22 +133,42 @@ static AstNode *parse_class_decl(Parser *parser) {
         return NULL;
     }
 
-    /* Skip class body for now; retain robustness if nested braces appear. */
-    brace_depth = 1u;
-    while (brace_depth > 0u) {
+    parser_advance(parser);
+    while (parser->current_token.type != TOKEN_RBRACE &&
+           parser->current_token.type != TOKEN_EOF) {
+        if (parser->current_token.type == TOKEN_IDENTIFIER) {
+            AstNode *member = parse_var_decl(parser);
+            if (member != NULL) {
+                if (!parser_append_class_member(&class_node->class_decl, member)) {
+                    free(member);
+                    free(class_node->class_decl.members);
+                    free(class_node);
+                    return NULL;
+                }
+
+                /* parse_var_decl exits on ';', so advance to the next token. */
+                parser_advance(parser);
+                continue;
+            }
+
+            fprintf(stderr, "parse_class_decl: invalid property declaration near '%.*s'\n",
+                    (int)parser->current_token.length,
+                    parser->current_token.start);
+            parser_advance(parser);
+            continue;
+        }
+
+        fprintf(stderr, "parse_class_decl: unexpected token in class body: '%.*s'\n",
+                (int)parser->current_token.length,
+                parser->current_token.start);
         parser_advance(parser);
+    }
 
-        if (parser->current_token.type == TOKEN_EOF) {
-            fprintf(stderr, "parse_class_decl: unexpected EOF while scanning class body\n");
-            free(class_node);
-            return NULL;
-        }
-
-        if (parser->current_token.type == TOKEN_LBRACE) {
-            ++brace_depth;
-        } else if (parser->current_token.type == TOKEN_RBRACE) {
-            --brace_depth;
-        }
+    if (parser->current_token.type == TOKEN_EOF) {
+        fprintf(stderr, "parse_class_decl: unexpected EOF while scanning class body\n");
+        free(class_node->class_decl.members);
+        free(class_node);
+        return NULL;
     }
 
     return class_node;

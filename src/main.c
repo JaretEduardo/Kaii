@@ -37,13 +37,28 @@ int main(int argc, char *argv[]) {
         printf("\n[+] Syntax analysis completed successfully.\n");
         printf("[+] The file contains %zu global declarations.\n", ast->program.declaration_count);
         
-        printf("\n--- CLASSES DETECTED ---\n");
+        // We print the names of the classes and their properties
+        printf("\n--- AST STRUCTURE ---\n");
         for (size_t i = 0; i < ast->program.declaration_count; i++) {
             AstNode *decl = ast->program.declarations[i];
+            
             if (decl->type == AST_CLASS_DECL) {
-                printf(" -> class %.*s\n", 
+                printf(" -> class %.*s {\n", 
                        (int)decl->class_decl.name.length, 
                        decl->class_decl.name.start);
+                
+                // We iterate through the properties (variables) of the class
+                for (size_t j = 0; j < decl->class_decl.member_count; j++) {
+                    AstNode *member = decl->class_decl.members[j];
+                    if (member->type == AST_VAR_DECL) {
+                        printf("      property: %.*s | type: %.*s\n",
+                               (int)member->var_decl.name.length,
+                               member->var_decl.name.start,
+                               (int)member->var_decl.declared_type.length,
+                               member->var_decl.declared_type.start);
+                    }
+                }
+                printf("    }\n");
             }
         }
     }
