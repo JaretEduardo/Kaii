@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
                         AstNode *target = stmt->assignment.target;
                         AstNode *value = stmt->assignment.value;
                         
-                        printf("      instruccion: %.*s := ", 
+                        printf("      instruction: %.*s := ", 
                                (int)target->var_decl.name.length, 
                                target->var_decl.name.start);
                         
@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
                         }
                     }
                     else if (stmt->type == AST_FREE_STMT) {
-                        printf("      instruccion: free %.*s\n",
+                        printf("      instruction: free %.*s\n",
                                (int)stmt->free_stmt.target_name.length,
                                stmt->free_stmt.target_name.start);
                     }
@@ -108,11 +108,11 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        printf("\n[*] Transpilando a C...\n");
+        printf("\n[*] Transpiling to C...\n");
         if (generate_code(ast, "out.c") == 0) {
-            printf("[+] Archivo 'out.c' generado con exito.\n");
+            printf("[+] File 'out.c' generated successfully.\n");
         } else {
-            printf("[!] Error fatal durante la generacion de codigo.\n");
+            printf("[!] Fatal error during code generation.\n");
         }
     }
 
