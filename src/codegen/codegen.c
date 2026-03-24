@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+static SymbolTable *g_codegen_symbols = NULL;
+
 static int write_literal(FILE *out, const char *text) {
     return fputs(text, out) >= 0;
 }
@@ -179,6 +181,39 @@ static int emit_statement(FILE *out, AstNode *stmt, int indent_depth) {
         }
 
         if (expr_token.type == TOKEN_IDENTIFIER) {
+            Symbol *symbol = NULL;
+            Token symbol_type;
+
+            symbol_type.start = NULL;
+            symbol_type.length = 0u;
+            symbol_type.type = TOKEN_EOF;
+
+            if (g_codegen_symbols != NULL) {
+                symbol = symbol_table_lookup(g_codegen_symbols, expr_token);
+                if (symbol != NULL) {
+                    symbol_type = symbol->type;
+                }
+            }
+
+            if (symbol_type.type == TOKEN_F32 || symbol_type.type == TOKEN_F64 ||
+                token_equals(symbol_type, "f32") || token_equals(symbol_type, "f64")) {
+                return write_literal(out, "printf(\"%f\\n\", ") &&
+                       write_token(out, expr_token) &&
+                       write_literal(out, ");\n");
+            }
+
+            if (symbol_type.type == TOKEN_IDENTIFIER && g_codegen_symbols != NULL) {
+                Symbol *class_symbol = symbol_table_lookup(g_codegen_symbols, symbol_type);
+                if (class_symbol != NULL && class_symbol->category == SYMBOL_CLASS) {
+                    return write_literal(out, "printf(\"Object <") &&
+                           write_token(out, symbol_type) &&
+                           write_literal(out, "> at %p\\n\", (void*)") &&
+                           write_token(out, expr_token) &&
+                           write_literal(out, ");\n");
+                }
+            }
+
+            /* Default integer printing path for i8/i32 and unresolved identifiers. */
             return write_literal(out, "printf(\"%d\\n\", ") &&
                    write_token(out, expr_token) &&
                    write_literal(out, ");\n");
@@ -291,9 +326,11 @@ static int emit_func_decl(FILE *out, AstNode *node) {
     return 1;
 }
 
-int generate_code(AstNode *ast, const char *output_filename) {
+int generate_code(AstNode *ast, SymbolTable *symbols, const char *output_filename) {
     FILE *out = NULL;
     size_t i;
+
+    g_codegen_symbols = symbols;
 
     if (ast == NULL || output_filename == NULL) {
         fprintf(stderr, "generate_code: invalid input\n");

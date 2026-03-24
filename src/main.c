@@ -6,6 +6,7 @@
 #include "parser/parser.h"
 #include "utils/file_io.h"
 #include "codegen/codegen.h"
+#include "semantics/symbol_table.h"
 
 int main(int argc, char *argv[]) {
     const char *source_path = NULL;
@@ -13,7 +14,7 @@ int main(int argc, char *argv[]) {
     size_t source_size = 0u;
 
     if (argc != 3 || strcmp(argv[1], "build") != 0) {
-        fprintf(stderr, "Kaii Compiler (Stage 1)\n");
+        fprintf(stderr, "Kaii Compiler (Stage 2)\n");
         fprintf(stderr, "Usage: %s build <file.kaii>\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -25,17 +26,20 @@ int main(int argc, char *argv[]) {
     }
 
     printf("[*] Loading %s (%zu bytes)\n", source_path, source_size);
-    printf("[*] Starting Parser...\n");
+    printf("[*] Starting Parser & Semantic Engine...\n");
+
+    SymbolTable symbols;
+    symbol_table_init(&symbols);
 
     Parser parser;
-    parser_init(&parser, source);
+    parser_init(&parser, source, &symbols);
 
     AstNode *ast = parse_program(&parser);
 
     if (ast == NULL) {
-        printf("\n[!] Fatal syntax error. Parser stopped.\n");
+        printf("\n[!] Fatal error. Analysis stopped.\n");
     } else {
-        printf("\n[+] Syntax analysis completed successfully.\n");
+        printf("\n[+] Syntax & Semantic analysis completed successfully.\n");
         printf("[+] The file contains %zu global declarations.\n", ast->program.declaration_count);
         
         printf("\n--- AST STRUCTURE ---\n");
@@ -103,19 +107,24 @@ int main(int argc, char *argv[]) {
                                (int)stmt->free_stmt.target_name.length,
                                stmt->free_stmt.target_name.start);
                     }
+                    else if (stmt->type == AST_PRINT_STMT) {
+                        printf("      instruction: print(...)\n");
+                    }
                 }
                 printf("    }\n");
             }
         }
 
         printf("\n[*] Transpiling to C...\n");
-        if (generate_code(ast, "out.c") == 0) {
+        if (generate_code(ast, &symbols, "out.c") == 0) {
             printf("[+] File 'out.c' generated successfully.\n");
         } else {
             printf("[!] Fatal error during code generation.\n");
         }
     }
 
+    symbol_table_free(&symbols);
     free(source);
+
     return (ast == NULL) ? EXIT_FAILURE : EXIT_SUCCESS;
 }

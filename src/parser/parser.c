@@ -114,6 +114,14 @@ static AstNode *parse_var_decl(Parser *parser) {
     var_node->var_decl.name = name;
     var_node->var_decl.declared_type = declared_type;
     var_node->var_decl.initializer = NULL;
+
+    if (parser->symbols != NULL &&
+        !symbol_table_insert(parser->symbols, name, declared_type, SYMBOL_VARIABLE)) {
+        fprintf(stderr, "Semantic Error: Duplicate identifier '%.*s'\n", (int)name.length, name.start);
+        free(var_node);
+        return NULL;
+    }
+
     return var_node;
 }
 
@@ -354,11 +362,24 @@ static AstNode *parse_statement(Parser *parser) {
 
     assignment->assignment.target = target;
     assignment->assignment.value = value;
+
+    if (parser->symbols != NULL && value->type == AST_ALLOC_EXPR) {
+        Token inferred_type = value->alloc_expr.type_name;
+        if (!symbol_table_insert(parser->symbols, target_name, inferred_type, SYMBOL_VARIABLE)) {
+            fprintf(stderr, "Semantic Error: Duplicate identifier '%.*s'\n", (int)target_name.length, target_name.start);
+            free(assignment);
+            free(target);
+            free(value);
+            return NULL;
+        }
+    }
+
     return assignment;
 }
 
 static AstNode *parse_class_decl(Parser *parser) {
     AstNode *class_node = NULL;
+    Token class_name;
 
     /* Recursive descent entry: class_decl := 'class' IDENTIFIER '{' ... '}' */
     if (parser->current_token.type != TOKEN_CLASS) {
@@ -379,6 +400,7 @@ static AstNode *parse_class_decl(Parser *parser) {
     }
 
     class_node->class_decl.name = parser->current_token;
+    class_name = parser->current_token;
 
     parser_advance(parser);
     if (parser->current_token.type != TOKEN_LBRACE) {
@@ -425,12 +447,21 @@ static AstNode *parse_class_decl(Parser *parser) {
         return NULL;
     }
 
+    if (parser->symbols != NULL &&
+        !symbol_table_insert(parser->symbols, class_name, class_name, SYMBOL_CLASS)) {
+        fprintf(stderr, "Semantic Error: Duplicate identifier '%.*s'\n", (int)class_name.length, class_name.start);
+        free(class_node->class_decl.members);
+        free(class_node);
+        return NULL;
+    }
+
     return class_node;
 }
 
 static AstNode *parse_func_decl(Parser *parser) {
     AstNode *func_node = NULL;
     Token default_return_type;
+    Token func_name;
 
     /* Recursive descent entry: func_decl := 'fn' IDENTIFIER '(' params? ')' (':' type)? '{' statements* '}' */
     if (parser->current_token.type != TOKEN_FN) {
@@ -450,6 +481,7 @@ static AstNode *parse_func_decl(Parser *parser) {
         return NULL;
     }
     func_node->func_decl.name = parser->current_token;
+    func_name = parser->current_token;
 
     parser_advance(parser);
     if (parser->current_token.type != TOKEN_LPAREN) {
@@ -505,6 +537,15 @@ static AstNode *parse_func_decl(Parser *parser) {
         parameter->var_decl.name = param_name;
         parameter->var_decl.declared_type = param_type;
         parameter->var_decl.initializer = NULL;
+
+        if (parser->symbols != NULL &&
+            !symbol_table_insert(parser->symbols, param_name, param_type, SYMBOL_VARIABLE)) {
+            fprintf(stderr, "Semantic Error: Duplicate identifier '%.*s'\n", (int)param_name.length, param_name.start);
+            free(parameter);
+            free(func_node->func_decl.parameters);
+            free(func_node);
+            return NULL;
+        }
 
         if (!parser_append_func_parameter(&func_node->func_decl, parameter)) {
             free(parameter);
@@ -591,15 +632,25 @@ static AstNode *parse_func_decl(Parser *parser) {
         return NULL;
     }
 
+    if (parser->symbols != NULL &&
+        !symbol_table_insert(parser->symbols, func_name, func_node->func_decl.return_type, SYMBOL_FUNCTION)) {
+        fprintf(stderr, "Semantic Error: Duplicate identifier '%.*s'\n", (int)func_name.length, func_name.start);
+        free(func_node->func_decl.parameters);
+        free(func_node->func_decl.body_statements);
+        free(func_node);
+        return NULL;
+    }
+
     return func_node;
 }
 
-void parser_init(Parser *parser, const char *source) {
+void parser_init(Parser *parser, const char *source, SymbolTable *symbols) {
     if (parser == NULL) {
         return;
     }
 
     parser->current_source_pointer = source;
+    parser->symbols = symbols;
 
     if (source == NULL) {
         parser->current_token.start = NULL;

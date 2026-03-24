@@ -1,0 +1,4 @@
+fn main() {
+    p := alloc Player;
+    p := alloc Player; // <--- ERROR: Variable duplicada
+}

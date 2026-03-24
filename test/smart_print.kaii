@@ -1,0 +1,10 @@
+class Player {
+    health: i32;
+}
+
+fn main() {
+    p := alloc Player;
+    print("Iniciando sistema...");
+    print(p); // Debería detectar que es un Objeto (Clase)
+    free p;
+}
