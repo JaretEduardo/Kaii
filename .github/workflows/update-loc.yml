@@ -1,0 +1,44 @@
+name: Update Lines of Code Badge
+
+on:
+  push:
+    branches: [ "development", "main", "master" ]
+    paths-ignore:
+      - "doc/loc-badge.svg"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-loc-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate LoC Badge
+        uses: shadowmoose/GHA-LoC-Badge@1.0.0
+        id: badge
+        with:
+          debug: true
+          directory: ./
+          badge: ./doc/loc-badge.svg
+          ignore: 'node_modules|.git|.vs|bin|obj' 
+          
+      - name: Commit and Push Badge
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "KAI Bot"
+          mkdir -p doc
+          git add doc/loc-badge.svg
+
+          if git diff --cached --quiet; then
+            echo "No badge changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: update lines of code badge [skip ci]"
+          git push
