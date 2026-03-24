@@ -37,7 +37,6 @@ int main(int argc, char *argv[]) {
         printf("\n[+] Syntax analysis completed successfully.\n");
         printf("[+] The file contains %zu global declarations.\n", ast->program.declaration_count);
         
-        // We print the names of the classes and their properties
         printf("\n--- AST STRUCTURE ---\n");
         for (size_t i = 0; i < ast->program.declaration_count; i++) {
             AstNode *decl = ast->program.declarations[i];
@@ -47,7 +46,6 @@ int main(int argc, char *argv[]) {
                        (int)decl->class_decl.name.length, 
                        decl->class_decl.name.start);
                 
-                // We iterate through the properties (variables) of the class
                 for (size_t j = 0; j < decl->class_decl.member_count; j++) {
                     AstNode *member = decl->class_decl.members[j];
                     if (member->type == AST_VAR_DECL) {
@@ -98,6 +96,11 @@ int main(int argc, char *argv[]) {
                                    (int)value->alloc_expr.type_name.length, 
                                    value->alloc_expr.type_name.start);
                         }
+                    }
+                    else if (stmt->type == AST_FREE_STMT) {
+                        printf("      instruccion: free %.*s\n",
+                               (int)stmt->free_stmt.target_name.length,
+                               stmt->free_stmt.target_name.start);
                     }
                 }
                 printf("    }\n");

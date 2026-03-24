@@ -17,7 +17,8 @@ typedef enum AstNodeType {
     AST_FUNC_DECL,
     AST_VAR_DECL,
     AST_ASSIGNMENT,
-    AST_ALLOC_EXPR
+    AST_ALLOC_EXPR,
+    AST_FREE_STMT
 } AstNodeType;
 
 typedef struct AstNode AstNode;
@@ -64,6 +65,11 @@ typedef struct AstAllocExpr {
     AstNode *size_expr;
 } AstAllocExpr;
 
+/* free p; */
+typedef struct AstFreeStmt {
+    Token target_name;
+} AstFreeStmt;
+
 /*
  * Main AST node container.
  * The union is anonymous by design for terse field access:
@@ -78,6 +84,7 @@ struct AstNode {
         AstVarDecl var_decl;
         AstAssignment assignment;
         AstAllocExpr alloc_expr;
+        AstFreeStmt free_stmt;
     };
 };
 

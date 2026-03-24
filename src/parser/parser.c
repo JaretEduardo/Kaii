@@ -146,10 +146,31 @@ static AstNode *parse_alloc_expr(Parser *parser) {
     return alloc_node;
 }
 
+static void parser_recover_statement(Parser *parser, Token start_token) {
+    if (parser == NULL) {
+        return;
+    }
+
+    /* Ensure forward progress when the caller retries after an error. */
+    if (parser->current_token.type == start_token.type &&
+        parser->current_token.start == start_token.start &&
+        parser->current_token.length == start_token.length) {
+        parser_advance(parser);
+    }
+
+    while (parser->current_token.type != TOKEN_SEMICOLON &&
+           parser->current_token.type != TOKEN_RBRACE &&
+           parser->current_token.type != TOKEN_EOF) {
+        parser_advance(parser);
+    }
+}
+
 static AstNode *parse_statement(Parser *parser) {
+    Token statement_start;
     AstNode *assignment = NULL;
     AstNode *target = NULL;
     AstNode *value = NULL;
+    AstNode *free_stmt = NULL;
     Token target_name;
     Token empty_type;
 
@@ -158,9 +179,38 @@ static AstNode *parse_statement(Parser *parser) {
         return NULL;
     }
 
+    statement_start = parser->current_token;
+
+    if (parser->current_token.type == TOKEN_FREE) {
+        Token free_target;
+
+        parser_advance(parser);
+        if (parser->current_token.type != TOKEN_IDENTIFIER) {
+            fprintf(stderr, "parse_statement: expected identifier after 'free'\n");
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+        free_target = parser->current_token;
+
+        parser_advance(parser);
+        if (parser->current_token.type != TOKEN_SEMICOLON) {
+            fprintf(stderr, "parse_statement: expected ';' after free target\n");
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+
+        free_stmt = ast_create_node(AST_FREE_STMT);
+        if (free_stmt == NULL) {
+            return NULL;
+        }
+        free_stmt->free_stmt.target_name = free_target;
+        return free_stmt;
+    }
+
     /* Statement grammar for this phase: IDENTIFIER (':')? '=' alloc IDENTIFIER ';' */
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "parse_statement: expected statement starting with IDENTIFIER\n");
+        parser_recover_statement(parser, statement_start);
         return NULL;
     }
 
@@ -171,10 +221,12 @@ static AstNode *parse_statement(Parser *parser) {
         parser_advance(parser);
         if (parser->current_token.type != TOKEN_ASSIGN) {
             fprintf(stderr, "parse_statement: expected '=' after ':' in assignment\n");
+            parser_recover_statement(parser, statement_start);
             return NULL;
         }
     } else if (parser->current_token.type != TOKEN_ASSIGN) {
         fprintf(stderr, "parse_statement: expected assignment operator ':=' or '='\n");
+        parser_recover_statement(parser, statement_start);
         return NULL;
     }
 
@@ -182,10 +234,12 @@ static AstNode *parse_statement(Parser *parser) {
     if (parser->current_token.type == TOKEN_ALLOC) {
         value = parse_alloc_expr(parser);
         if (value == NULL) {
+            parser_recover_statement(parser, statement_start);
             return NULL;
         }
     } else {
         fprintf(stderr, "parse_statement: expected alloc expression on assignment RHS\n");
+        parser_recover_statement(parser, statement_start);
         return NULL;
     }
 
@@ -193,6 +247,7 @@ static AstNode *parse_statement(Parser *parser) {
     if (parser->current_token.type != TOKEN_SEMICOLON) {
         fprintf(stderr, "parse_statement: expected ';' at end of statement\n");
         free(value);
+        parser_recover_statement(parser, statement_start);
         return NULL;
     }
 
