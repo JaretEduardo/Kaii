@@ -9,6 +9,7 @@ typedef enum TokenType {
 
     TOKEN_IDENTIFIER,
     TOKEN_NUMBER,
+    TOKEN_STRING,
 
     TOKEN_CLASS,
     TOKEN_FN,

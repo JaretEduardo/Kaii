@@ -70,13 +70,42 @@ static inline TokenType classify_identifier(const char *start, size_t length) {
 Token lexer_next_token(const char **current_char) {
     const char *p = *current_char;
 
-    while (is_space((unsigned char)*p)) {
-        ++p;
+    for (;;) {
+        while (is_space((unsigned char)*p)) {
+            ++p;
+        }
+
+        if (*p == '/' && p[1] == '/') {
+            p += 2;
+            while (*p != '\0' && *p != '\n') {
+                ++p;
+            }
+            continue;
+        }
+
+        break;
     }
 
     if (*p == '\0') {
         *current_char = p;
         return make_token(p, 0u, TOKEN_EOF);
+    }
+
+    if (*p == '"') {
+        const char *start = p + 1;
+        ++p;
+
+        while (*p != '\0' && *p != '"') {
+            ++p;
+        }
+
+        if (*p != '"') {
+            *current_char = p;
+            return make_token(start, (size_t)(p - start), TOKEN_ERROR);
+        }
+
+        *current_char = p + 1;
+        return make_token(start, (size_t)(p - start), TOKEN_STRING);
     }
 
     switch (*p) {

@@ -57,6 +57,8 @@ static const char *token_type_to_string(TokenType type) {
             return "DOT";
         case TOKEN_GT:
             return "GT";
+        case TOKEN_STRING:
+            return "STRING";
         default:
             return "UNKNOWN";
     }

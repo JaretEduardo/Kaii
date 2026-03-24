@@ -1,16 +1,7 @@
+// Esto es un comentario de prueba para el motor
 class Player {
     health: i32;
-    speed: f32;
 }
-
-fn main() {
-    p := alloc Player;
-    p.health = 100;
-    
-    while (p.health > 0) {
-        p.speed = 1.5;
-    }
-    
-    free p;
-    return 0;
-}
+p := alloc Player;
+// El Lexer debería ignorar esto
+"Inokaii Labs"
