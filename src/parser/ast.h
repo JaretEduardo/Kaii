@@ -22,7 +22,8 @@ typedef enum AstNodeType {
     AST_PRINT_STMT,
     AST_LITERAL,
     AST_VARIABLE_EXPR,
-    AST_BINARY_EXPR
+    AST_BINARY_EXPR,
+    AST_IF_STMT
 } AstNodeType;
 
 typedef struct AstNode AstNode;
@@ -94,6 +95,15 @@ typedef struct AstVariableExpr {
     Token name;
 } AstVariableExpr;
 
+/* if (cond) { ... } else { ... } */
+typedef struct AstIfStmt {
+    struct AstNode *condition;
+    struct AstNode **then_statements;
+    size_t then_statement_count;
+    struct AstNode **else_statements;
+    size_t else_statement_count;
+} AstIfStmt;
+
 /*
  * Main AST node container.
  * The union is anonymous by design for terse field access:
@@ -113,6 +123,7 @@ struct AstNode {
         AstBinaryExpr binary_expr;
         AstLiteral literal;
         AstVariableExpr variable_expr;
+        AstIfStmt if_stmt;
     };
 };
 

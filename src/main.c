@@ -118,6 +118,20 @@ int main(int argc, char *argv[]) {
         printf("\n[*] Transpiling to C...\n");
         if (generate_code(ast, &symbols, "out.c") == 0) {
             printf("[+] File 'out.c' generated successfully.\n");
+            
+            printf("[*] Attempting to compile binary with GCC...\n");
+            int compile_status = system("gcc out.c -o out_prog");
+
+            if (compile_status == 0) {
+                printf("[+] Compilation successful! Executing program...\n");
+                printf("==================== OUTPUT ====================\n");
+                system("./out_prog");
+                printf("================================================\n");
+            } else {
+                printf("[!] Warning: GCC not found or compilation failed.\n");
+                printf("[i] You can still compile 'out.c' manually when a C compiler is available.\n");
+            }
+
         } else {
             printf("[!] Fatal error during code generation.\n");
         }

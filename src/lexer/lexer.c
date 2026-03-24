@@ -43,6 +43,9 @@ static inline TokenType classify_identifier(const char *start, size_t length) {
     if (length == 2u && memcmp(start, "if", 2u) == 0) {
         return TOKEN_IF;
     }
+    if (length == 4u && memcmp(start, "else", 4u) == 0) {
+        return TOKEN_ELSE;
+    }
     if (length == 5u && memcmp(start, "while", 5u) == 0) {
         return TOKEN_WHILE;
     }

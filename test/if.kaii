@@ -1,0 +1,12 @@
+fn main() {
+    poder: i32 = 7000;
+    limite: i32 = 8000;
+
+    print("Analizando nivel de poder...");
+
+    if (poder > limite) {
+        print("¡Es mas de 8000!");
+    } else {
+        print("Es un nivel normal.");
+    }
+}

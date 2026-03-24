@@ -189,6 +189,7 @@ static AstNode *parse_equality(Parser *parser);
 static AstNode *parse_term(Parser *parser);
 static AstNode *parse_factor(Parser *parser);
 static AstNode *parse_primary(Parser *parser);
+static AstNode *parse_statement(Parser *parser);
 
 /* parse_primary: Handles TOKEN_NUMBER, TOKEN_IDENTIFIER, TOKEN_STRING, and parenthesized expressions. */
 static AstNode *parse_primary(Parser *parser) {
@@ -467,6 +468,154 @@ static AstNode *parse_print_stmt(Parser *parser) {
     return print_node;
 }
 
+static AstNode *parse_if_stmt(Parser *parser) {
+    AstNode *if_node = NULL;
+    AstNode *condition = NULL;
+    AstNode **then_statements = NULL;
+    size_t then_count = 0u;
+    AstNode **else_statements = NULL;
+    size_t else_count = 0u;
+    Token statement_start;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_if_stmt: parser is NULL\n");
+        return NULL;
+    }
+
+    statement_start = parser->current_token;
+
+    if (parser->current_token.type != TOKEN_IF) {
+        fprintf(stderr, "parse_if_stmt: expected TOKEN_IF\n");
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_LPAREN) {
+        fprintf(stderr, "parse_if_stmt: expected '(' after 'if'\n");
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    condition = parse_expression(parser);
+    if (condition == NULL) {
+        fprintf(stderr, "parse_if_stmt: failed to parse if condition\n");
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    if (parser->current_token.type != TOKEN_RPAREN) {
+        fprintf(stderr, "parse_if_stmt: expected ')' after if condition\n");
+        free(condition);
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_LBRACE) {
+        fprintf(stderr, "parse_if_stmt: expected '{' to start if body\n");
+        free(condition);
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    while (parser->current_token.type != TOKEN_RBRACE &&
+           parser->current_token.type != TOKEN_EOF) {
+        AstNode *then_stmt = parse_statement(parser);
+        if (then_stmt == NULL) {
+            fprintf(stderr, "parse_if_stmt: failed to parse statement in if body\n");
+            free(condition);
+            free(then_statements);
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+
+        if (!parser_append_node_ptr(&then_statements, &then_count, then_stmt, "parse_if_stmt.then")) {
+            free(then_stmt);
+            free(condition);
+            free(then_statements);
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+
+        /* parse_statement exits on ';' or on the closing '}' of nested blocks. */
+        parser_advance(parser);
+    }
+
+    if (parser->current_token.type == TOKEN_EOF) {
+        fprintf(stderr, "parse_if_stmt: unexpected EOF while scanning if body\n");
+        free(condition);
+        free(then_statements);
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    /* Optional else block: current token is '}', peek may be TOKEN_ELSE. */
+    if (parser->peek_token.type == TOKEN_ELSE) {
+        parser_advance(parser); /* move from '}' to 'else' */
+        parser_advance(parser); /* move to token after else */
+
+        if (parser->current_token.type != TOKEN_LBRACE) {
+            fprintf(stderr, "parse_if_stmt: expected '{' to start else body\n");
+            free(condition);
+            free(then_statements);
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+
+        parser_advance(parser);
+        while (parser->current_token.type != TOKEN_RBRACE &&
+               parser->current_token.type != TOKEN_EOF) {
+            AstNode *else_stmt = parse_statement(parser);
+            if (else_stmt == NULL) {
+                fprintf(stderr, "parse_if_stmt: failed to parse statement in else body\n");
+                free(condition);
+                free(then_statements);
+                free(else_statements);
+                parser_recover_statement(parser, statement_start);
+                return NULL;
+            }
+
+            if (!parser_append_node_ptr(&else_statements, &else_count, else_stmt, "parse_if_stmt.else")) {
+                free(else_stmt);
+                free(condition);
+                free(then_statements);
+                free(else_statements);
+                parser_recover_statement(parser, statement_start);
+                return NULL;
+            }
+
+            /* parse_statement exits on ';' or on the closing '}' of nested blocks. */
+            parser_advance(parser);
+        }
+
+        if (parser->current_token.type == TOKEN_EOF) {
+            fprintf(stderr, "parse_if_stmt: unexpected EOF while scanning else body\n");
+            free(condition);
+            free(then_statements);
+            free(else_statements);
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+    }
+
+    if_node = ast_create_node(AST_IF_STMT);
+    if (if_node == NULL) {
+        free(condition);
+        free(then_statements);
+        free(else_statements);
+        return NULL;
+    }
+
+    if_node->if_stmt.condition = condition;
+    if_node->if_stmt.then_statements = then_statements;
+    if_node->if_stmt.then_statement_count = then_count;
+    if_node->if_stmt.else_statements = else_statements;
+    if_node->if_stmt.else_statement_count = else_count;
+    return if_node;
+}
+
 static AstNode *parse_statement(Parser *parser) {
     Token statement_start;
     AstNode *assignment = NULL;
@@ -481,6 +630,15 @@ static AstNode *parse_statement(Parser *parser) {
     }
 
     statement_start = parser->current_token;
+
+    if (parser->current_token.type == TOKEN_IF) {
+        AstNode *if_stmt = parse_if_stmt(parser);
+        if (if_stmt == NULL) {
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
+        return if_stmt;
+    }
 
     if (parser->current_token.type == TOKEN_PRINT) {
         AstNode *print_stmt = parse_print_stmt(parser);

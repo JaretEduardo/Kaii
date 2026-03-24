@@ -265,6 +265,49 @@ static int emit_statement(FILE *out, AstNode *stmt, int indent_depth) {
                write_literal(out, ");\n");
     }
 
+    if (stmt->type == AST_IF_STMT) {
+        size_t i;
+
+        if (!write_literal(out, "if (") ||
+            !emit_expression(out, stmt->if_stmt.condition) ||
+            !write_literal(out, ") {\n")) {
+            return 0;
+        }
+
+        for (i = 0u; i < stmt->if_stmt.then_statement_count; ++i) {
+            if (!emit_statement(out, stmt->if_stmt.then_statements[i], indent_depth + 1)) {
+                return 0;
+            }
+        }
+
+        if (!emit_indent(out, indent_depth)) {
+            return 0;
+        }
+
+        if (stmt->if_stmt.else_statement_count > 0u) {
+            if (!write_literal(out, "} else {\n")) {
+                return 0;
+            }
+
+            for (i = 0u; i < stmt->if_stmt.else_statement_count; ++i) {
+                if (!emit_statement(out, stmt->if_stmt.else_statements[i], indent_depth + 1)) {
+                    return 0;
+                }
+            }
+
+            if (!emit_indent(out, indent_depth) ||
+                !write_literal(out, "}\n")) {
+                return 0;
+            }
+        } else {
+            if (!write_literal(out, "}\n")) {
+                return 0;
+            }
+        }
+
+        return 1;
+    }
+
     if (stmt->type == AST_PRINT_STMT) {
         AstNode *expr = stmt->print_stmt.expression;
         Token expr_token;
