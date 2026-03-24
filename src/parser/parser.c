@@ -151,6 +151,7 @@ static AstNode *parse_alloc_expr(Parser *parser) {
 
     alloc_node->alloc_expr.type_name = parser->current_token;
     alloc_node->alloc_expr.size_expr = NULL;
+    parser_advance(parser);
     return alloc_node;
 }
 
@@ -171,6 +172,228 @@ static void parser_recover_statement(Parser *parser, Token start_token) {
            parser->current_token.type != TOKEN_EOF) {
         parser_advance(parser);
     }
+}
+
+/*
+ * Recursive descent expression parser with operator precedence climbing.
+ * Precedence (lowest to highest):
+ *   1. Equality (==, >)
+ *   2. Term (+, -)
+ *   3. Factor (*, /)
+ *   4. Primary (literals, identifiers, parentheses)
+ */
+
+/* Forward declarations for recursive precedence functions. */
+static AstNode *parse_expression(Parser *parser);
+static AstNode *parse_equality(Parser *parser);
+static AstNode *parse_term(Parser *parser);
+static AstNode *parse_factor(Parser *parser);
+static AstNode *parse_primary(Parser *parser);
+
+/* parse_primary: Handles TOKEN_NUMBER, TOKEN_IDENTIFIER, TOKEN_STRING, and parenthesized expressions. */
+static AstNode *parse_primary(Parser *parser) {
+    AstNode *node = NULL;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_primary: parser is NULL\n");
+        return NULL;
+    }
+
+    switch (parser->current_token.type) {
+        case TOKEN_NUMBER: {
+            node = ast_create_node(AST_LITERAL);
+            if (node == NULL) {
+                return NULL;
+            }
+            node->literal.value = parser->current_token;
+            parser_advance(parser);
+            return node;
+        }
+
+        case TOKEN_IDENTIFIER: {
+            node = ast_create_node(AST_VARIABLE_EXPR);
+            if (node == NULL) {
+                return NULL;
+            }
+            node->variable_expr.name = parser->current_token;
+            parser_advance(parser);
+            return node;
+        }
+
+        case TOKEN_STRING: {
+            node = ast_create_node(AST_LITERAL);
+            if (node == NULL) {
+                return NULL;
+            }
+            node->literal.value = parser->current_token;
+            parser_advance(parser);
+            return node;
+        }
+
+        case TOKEN_LPAREN: {
+            parser_advance(parser);
+            node = parse_expression(parser);
+            if (node == NULL) {
+                return NULL;
+            }
+            if (parser->current_token.type != TOKEN_RPAREN) {
+                fprintf(stderr, "parse_primary: expected ')' after expression in parentheses\n");
+                free(node);
+                return NULL;
+            }
+            parser_advance(parser);
+            return node;
+        }
+
+        default:
+            fprintf(stderr, "parse_primary: unexpected token '%.*s' (type=%d)\n",
+                    (int)parser->current_token.length,
+                    parser->current_token.start,
+                    (int)parser->current_token.type);
+            return NULL;
+    }
+}
+
+/* parse_factor: Handles *, / (higher precedence than term). */
+static AstNode *parse_factor(Parser *parser) {
+    AstNode *left = NULL;
+    AstNode *right = NULL;
+    AstNode *binary = NULL;
+    Token op;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_factor: parser is NULL\n");
+        return NULL;
+    }
+
+    left = parse_primary(parser);
+    if (left == NULL) {
+        return NULL;
+    }
+
+    while (parser->current_token.type == TOKEN_STAR ||
+           parser->current_token.type == TOKEN_SLASH) {
+        op = parser->current_token;
+        parser_advance(parser);
+
+        right = parse_primary(parser);
+        if (right == NULL) {
+            free(left);
+            return NULL;
+        }
+
+        binary = ast_create_node(AST_BINARY_EXPR);
+        if (binary == NULL) {
+            free(left);
+            free(right);
+            return NULL;
+        }
+
+        binary->binary_expr.left = left;
+        binary->binary_expr.op = op;
+        binary->binary_expr.right = right;
+        left = binary;
+    }
+
+    return left;
+}
+
+/* parse_term: Handles +, - (lower precedence than factor). */
+static AstNode *parse_term(Parser *parser) {
+    AstNode *left = NULL;
+    AstNode *right = NULL;
+    AstNode *binary = NULL;
+    Token op;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_term: parser is NULL\n");
+        return NULL;
+    }
+
+    left = parse_factor(parser);
+    if (left == NULL) {
+        return NULL;
+    }
+
+    while (parser->current_token.type == TOKEN_PLUS ||
+           parser->current_token.type == TOKEN_MINUS) {
+        op = parser->current_token;
+        parser_advance(parser);
+
+        right = parse_factor(parser);
+        if (right == NULL) {
+            free(left);
+            return NULL;
+        }
+
+        binary = ast_create_node(AST_BINARY_EXPR);
+        if (binary == NULL) {
+            free(left);
+            free(right);
+            return NULL;
+        }
+
+        binary->binary_expr.left = left;
+        binary->binary_expr.op = op;
+        binary->binary_expr.right = right;
+        left = binary;
+    }
+
+    return left;
+}
+
+/* parse_equality: Handles ==, > (lowest expression precedence). */
+static AstNode *parse_equality(Parser *parser) {
+    AstNode *left = NULL;
+    AstNode *right = NULL;
+    AstNode *binary = NULL;
+    Token op;
+
+    if (parser == NULL) {
+        fprintf(stderr, "parse_equality: parser is NULL\n");
+        return NULL;
+    }
+
+    left = parse_term(parser);
+    if (left == NULL) {
+        return NULL;
+    }
+
+    while (parser->current_token.type == TOKEN_EQUALS ||
+           parser->current_token.type == TOKEN_GT) {
+        op = parser->current_token;
+        parser_advance(parser);
+
+        right = parse_term(parser);
+        if (right == NULL) {
+            free(left);
+            return NULL;
+        }
+
+        binary = ast_create_node(AST_BINARY_EXPR);
+        if (binary == NULL) {
+            free(left);
+            free(right);
+            return NULL;
+        }
+
+        binary->binary_expr.left = left;
+        binary->binary_expr.op = op;
+        binary->binary_expr.right = right;
+        left = binary;
+    }
+
+    return left;
+}
+
+/* parse_expression: Entry point for expression parsing. Calls the lowest precedence level. */
+static AstNode *parse_expression(Parser *parser) {
+    if (parser == NULL) {
+        fprintf(stderr, "parse_expression: parser is NULL\n");
+        return NULL;
+    }
+
+    return parse_equality(parser);
 }
 
 static AstNode *parse_print_stmt(Parser *parser) {
@@ -251,7 +474,6 @@ static AstNode *parse_statement(Parser *parser) {
     AstNode *value = NULL;
     AstNode *free_stmt = NULL;
     Token target_name;
-    Token empty_type;
 
     if (parser == NULL) {
         fprintf(stderr, "parse_statement: parser is NULL\n");
@@ -295,7 +517,7 @@ static AstNode *parse_statement(Parser *parser) {
         return free_stmt;
     }
 
-    /* Statement grammar for this phase: IDENTIFIER (':')? '=' alloc IDENTIFIER ';' */
+    /* Statement grammar for this phase: IDENTIFIER ':' TYPE '=' expression ';' */
     if (parser->current_token.type != TOKEN_IDENTIFIER) {
         fprintf(stderr, "parse_statement: expected statement starting with IDENTIFIER\n");
         parser_recover_statement(parser, statement_start);
@@ -305,15 +527,30 @@ static AstNode *parse_statement(Parser *parser) {
     target_name = parser->current_token;
 
     parser_advance(parser);
-    if (parser->current_token.type == TOKEN_COLON) {
-        parser_advance(parser);
-        if (parser->current_token.type != TOKEN_ASSIGN) {
-            fprintf(stderr, "parse_statement: expected '=' after ':' in assignment\n");
-            parser_recover_statement(parser, statement_start);
-            return NULL;
-        }
-    } else if (parser->current_token.type != TOKEN_ASSIGN) {
-        fprintf(stderr, "parse_statement: expected assignment operator ':=' or '='\n");
+    if (parser->current_token.type != TOKEN_COLON) {
+        fprintf(stderr, "Semantic Error: explicit typing is required. Expected ':' after variable name '%.*s' (use 'name: type = expression;').\n",
+                (int)target_name.length,
+                target_name.start);
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    parser_advance(parser);
+    if (!parser_is_valid_type_token(parser->current_token.type)) {
+        fprintf(stderr, "Semantic Error: explicit typing is required. Expected a valid type after ':' for variable '%.*s'.\n",
+                (int)target_name.length,
+                target_name.start);
+        parser_recover_statement(parser, statement_start);
+        return NULL;
+    }
+
+    Token declared_type = parser->current_token;
+
+    parser_advance(parser);
+    if (parser->current_token.type != TOKEN_ASSIGN) {
+        fprintf(stderr, "parse_statement: expected '=' after explicit type annotation for variable '%.*s'\n",
+                (int)target_name.length,
+                target_name.start);
         parser_recover_statement(parser, statement_start);
         return NULL;
     }
@@ -326,12 +563,15 @@ static AstNode *parse_statement(Parser *parser) {
             return NULL;
         }
     } else {
-        fprintf(stderr, "parse_statement: expected alloc expression on assignment RHS\n");
-        parser_recover_statement(parser, statement_start);
-        return NULL;
+        /* Assignment RHS is an expression (not just alloc). */
+        value = parse_expression(parser);
+        if (value == NULL) {
+            fprintf(stderr, "parse_statement: failed to parse expression on assignment RHS\n");
+            parser_recover_statement(parser, statement_start);
+            return NULL;
+        }
     }
 
-    parser_advance(parser);
     if (parser->current_token.type != TOKEN_SEMICOLON) {
         fprintf(stderr, "parse_statement: expected ';' at end of statement\n");
         free(value);
@@ -345,12 +585,8 @@ static AstNode *parse_statement(Parser *parser) {
         return NULL;
     }
 
-    empty_type.start = NULL;
-    empty_type.length = 0u;
-    empty_type.type = TOKEN_EOF;
-
     target->var_decl.name = target_name;
-    target->var_decl.declared_type = empty_type;
+    target->var_decl.declared_type = declared_type;
     target->var_decl.initializer = NULL;
 
     assignment = ast_create_node(AST_ASSIGNMENT);
@@ -363,9 +599,9 @@ static AstNode *parse_statement(Parser *parser) {
     assignment->assignment.target = target;
     assignment->assignment.value = value;
 
-    if (parser->symbols != NULL && value->type == AST_ALLOC_EXPR) {
-        Token inferred_type = value->alloc_expr.type_name;
-        if (!symbol_table_insert(parser->symbols, target_name, inferred_type, SYMBOL_VARIABLE)) {
+    /* Always register with explicitly declared type. */
+    if (parser->symbols != NULL) {
+        if (!symbol_table_insert(parser->symbols, target_name, declared_type, SYMBOL_VARIABLE)) {
             fprintf(stderr, "Semantic Error: Duplicate identifier '%.*s'\n", (int)target_name.length, target_name.start);
             free(assignment);
             free(target);

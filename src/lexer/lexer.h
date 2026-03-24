@@ -34,7 +34,13 @@ typedef enum TokenType {
     TOKEN_ASSIGN,
     TOKEN_DOT,
     TOKEN_GT,
-    TOKEN_PRINT
+    TOKEN_PRINT,
+
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_STAR,
+    TOKEN_SLASH,
+    TOKEN_EQUALS
 } TokenType;
 
 /* Zero-copy token: lexeme points into the original source buffer. */

@@ -120,6 +120,55 @@ static int emit_escaped_c_string(FILE *out, Token token) {
     return 1;
 }
 
+/* emit_expression: Recursively emit an expression node to C code.
+ * Handles AST_LITERAL, AST_VARIABLE_EXPR, AST_ALLOC_EXPR, and AST_BINARY_EXPR.
+ * Kaii and C share operator precedence, so binary order can be emitted directly. */
+static int emit_expression(FILE *out, AstNode *expr) {
+    if (expr == NULL) {
+        return 0;
+    }
+
+    if (expr->type == AST_LITERAL) {
+        return write_token(out, expr->literal.value);
+    }
+
+    if (expr->type == AST_VARIABLE_EXPR) {
+        return write_token(out, expr->variable_expr.name);
+    }
+
+    if (expr->type == AST_ALLOC_EXPR) {
+        return emit_alloc_expr(out, expr);
+    }
+
+    if (expr->type == AST_BINARY_EXPR) {
+        Token op = expr->binary_expr.op;
+        const char *op_str = NULL;
+
+        /* Map token type to operator string. */
+        if (op.type == TOKEN_PLUS) {
+            op_str = " + ";
+        } else if (op.type == TOKEN_MINUS) {
+            op_str = " - ";
+        } else if (op.type == TOKEN_STAR) {
+            op_str = " * ";
+        } else if (op.type == TOKEN_SLASH) {
+            op_str = " / ";
+        } else if (op.type == TOKEN_EQUALS) {
+            op_str = " == ";
+        } else if (op.type == TOKEN_GT) {
+            op_str = " > ";
+        } else {
+            return 0;  /* Unknown operator */
+        }
+
+        return emit_expression(out, expr->binary_expr.left) &&
+               write_literal(out, op_str) &&
+               emit_expression(out, expr->binary_expr.right);
+    }
+
+    return 0;
+}
+
 static int emit_statement(FILE *out, AstNode *stmt, int indent_depth) {
     if (stmt == NULL) {
         return 0;
@@ -132,30 +181,82 @@ static int emit_statement(FILE *out, AstNode *stmt, int indent_depth) {
     if (stmt->type == AST_ASSIGNMENT) {
         AstNode *target = stmt->assignment.target;
         AstNode *value = stmt->assignment.value;
-        Token alloc_type;
+        Token target_name;
+        Token declared_type;
+        Symbol *symbol = NULL;
+        const char *c_type_str = NULL;
 
         if (target == NULL || target->type != AST_VAR_DECL || value == NULL) {
+            fprintf(stderr, "emit_statement: invalid assignment structure\n");
             return 0;
         }
 
-        if (value->type == AST_ALLOC_EXPR) {
-            alloc_type = value->alloc_expr.type_name;
+        target_name = target->var_decl.name;
 
-            if (!write_token(out, alloc_type) ||
-                !write_literal(out, "* ") ||
-                !write_token(out, target->var_decl.name) ||
-                !write_literal(out, " = ")) {
-                return 0;
-            }
+        /* MANDATORY LOOKUP: Variable MUST exist in the symbol table.
+         * No defaults - if not found, it's a semantic error. */
+        if (g_codegen_symbols == NULL) {
+            fprintf(stderr, "emit_statement: symbol table is NULL\n");
+            return 0;
+        }
 
-            if (!emit_alloc_expr(out, value)) {
+        symbol = symbol_table_lookup(g_codegen_symbols, target_name);
+        if (symbol == NULL) {
+            fprintf(stderr, "Codegen Error: Variable '%.*s' not found in symbol table. Mandatory explicit typing enforced.\n",
+                    (int)target_name.length, target_name.start);
+            return 0;
+        }
+
+        declared_type = symbol->type;
+
+        /* Map Kaii type to C type string. */
+        if (declared_type.type == TOKEN_I8 || token_equals(declared_type, "i8")) {
+            c_type_str = "int8_t";
+        } else if (declared_type.type == TOKEN_I32 || token_equals(declared_type, "i32")) {
+            c_type_str = "int32_t";
+        } else if (declared_type.type == TOKEN_F32 || token_equals(declared_type, "f32")) {
+            c_type_str = "float";
+        } else if (declared_type.type == TOKEN_F64 || token_equals(declared_type, "f64")) {
+            c_type_str = "double";
+        } else if (declared_type.type == TOKEN_BOOL || token_equals(declared_type, "bool")) {
+            c_type_str = "int";
+        } else if (declared_type.type == TOKEN_IDENTIFIER) {
+            /* Check if it's a class (pointer type). */
+            Symbol *class_symbol = symbol_table_lookup(g_codegen_symbols, declared_type);
+            if (class_symbol != NULL && class_symbol->category == SYMBOL_CLASS) {
+                /* Emit as pointer type. */
+                if (!write_token(out, declared_type) ||
+                    !write_literal(out, "* ") ||
+                    !write_token(out, target_name) ||
+                    !write_literal(out, " = ") ||
+                    !emit_expression(out, value) ||
+                    !write_literal(out, ";\n")) {
+                    return 0;
+                }
+                return 1;
+            } else {
+                fprintf(stderr, "emit_statement: unknown type '%.*s' for variable '%.*s'\n",
+                        (int)declared_type.length, declared_type.start,
+                        (int)target_name.length, target_name.start);
                 return 0;
             }
         } else {
+            fprintf(stderr, "emit_statement: unsupported type token for variable '%.*s'\n",
+                    (int)target_name.length, target_name.start);
             return 0;
         }
 
-        return write_literal(out, ";\n");
+        /* Emit the assignment with the mandatory type. */
+        if (!write_literal(out, c_type_str) ||
+            !write_literal(out, " ") ||
+            !write_token(out, target_name) ||
+            !write_literal(out, " = ") ||
+            !emit_expression(out, value) ||
+            !write_literal(out, ";\n")) {
+            return 0;
+        }
+
+        return 1;
     }
 
     if (stmt->type == AST_FREE_STMT) {

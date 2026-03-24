@@ -19,7 +19,10 @@ typedef enum AstNodeType {
     AST_ASSIGNMENT,
     AST_ALLOC_EXPR,
     AST_FREE_STMT,
-    AST_PRINT_STMT
+    AST_PRINT_STMT,
+    AST_LITERAL,
+    AST_VARIABLE_EXPR,
+    AST_BINARY_EXPR
 } AstNodeType;
 
 typedef struct AstNode AstNode;
@@ -76,6 +79,21 @@ typedef struct AstPrintStmt {
     AstNode *expression;
 } AstPrintStmt;
 
+/* left op right (ej. 5 + 10) */
+typedef struct AstBinaryExpr {
+    struct AstNode *left;
+    Token op;
+    struct AstNode *right;
+} AstBinaryExpr;
+
+typedef struct AstLiteral {
+    Token value;
+} AstLiteral;
+
+typedef struct AstVariableExpr {
+    Token name;
+} AstVariableExpr;
+
 /*
  * Main AST node container.
  * The union is anonymous by design for terse field access:
@@ -92,6 +110,9 @@ struct AstNode {
         AstAllocExpr alloc_expr;
         AstFreeStmt free_stmt;
         AstPrintStmt print_stmt;
+        AstBinaryExpr binary_expr;
+        AstLiteral literal;
+        AstVariableExpr variable_expr;
     };
 };
 

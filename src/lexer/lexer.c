@@ -131,8 +131,24 @@ Token lexer_next_token(const char **current_char) {
             *current_char = p + 1;
             return make_token(p, 1u, TOKEN_RPAREN);
         case '=':
+            if (p[1] == '=') {
+                *current_char = p + 2;
+                return make_token(p, 2u, TOKEN_EQUALS);
+            }
             *current_char = p + 1;
             return make_token(p, 1u, TOKEN_ASSIGN);
+        case '+':
+            *current_char = p + 1;
+            return make_token(p, 1u, TOKEN_PLUS);
+        case '-':
+            *current_char = p + 1;
+            return make_token(p, 1u, TOKEN_MINUS);
+        case '*':
+            *current_char = p + 1;
+            return make_token(p, 1u, TOKEN_STAR);
+        case '/':
+            *current_char = p + 1;
+            return make_token(p, 1u, TOKEN_SLASH);
         case '.':
             *current_char = p + 1;
             return make_token(p, 1u, TOKEN_DOT);

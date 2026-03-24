@@ -1,0 +1,21 @@
+class Player {
+    health: i32;
+}
+
+fn main() {
+    salud: i32 = 100;
+    damage: i32 = 10 * 2;
+    extra: i32 = 5;
+
+    // Operación compleja: 100 - 20 + 5 = 85
+    resultado: i32 = salud - damage + extra;
+
+    p: Player = alloc Player;
+
+    print("Resultado de la cuenta (debe ser 85):");
+    print(resultado);
+    print("Objeto creado:");
+    print(p);
+
+    free p;
+}
